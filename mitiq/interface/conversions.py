@@ -5,6 +5,7 @@
 
 """Functions for converting to/from Mitiq's internal circuit representation."""
 
+import logging
 from functools import wraps
 from typing import Any, Callable, Dict, Iterable, Optional, Tuple, cast
 
@@ -72,6 +73,11 @@ def convert_to_mitiq(circuit: QPROGRAM) -> Tuple[cirq.Circuit, str]:
         circuit: Mitiq circuit equivalent to input circuit.
         input_circuit_type: Type of input circuit represented by a string.
     """
+    try:
+        convert_to_mitiq.counter += 1
+    except AttributeError:
+        convert_to_mitiq.counter = 1
+
     conversion_function: Callable[[Any], cirq.Circuit]
 
     try:
@@ -141,9 +147,7 @@ def convert_to_mitiq(circuit: QPROGRAM) -> Tuple[cirq.Circuit, str]:
     return mitiq_circuit, input_circuit_type
 
 
-def convert_from_mitiq(
-    circuit: cirq.Circuit, conversion_type: str
-) -> QPROGRAM:
+def convert_from_mitiq(circuit: cirq.Circuit, conversion_type: str) -> QPROGRAM:
     """Converts a Mitiq circuit to a type specified by the conversion type.
 
     Args:
@@ -224,9 +228,7 @@ def atomic_converter(
     """
 
     @wraps(cirq_circuit_modifier)
-    def qprogram_modifier(
-        circuit: QPROGRAM, *args: Any, **kwargs: Any
-    ) -> QPROGRAM:
+    def qprogram_modifier(circuit: QPROGRAM, *args: Any, **kwargs: Any) -> QPROGRAM:
         # Convert to Mitiq representation.
         mitiq_circuit, input_circuit_type = convert_to_mitiq(circuit)
 
@@ -295,9 +297,7 @@ def accept_qprogram_and_validate(
         if "qiskit" in circuit.__module__:
             from qiskit.transpiler.passes import RemoveBarriers
 
-            from mitiq.interface.mitiq_qiskit.conversions import (
-                _add_identity_to_idle,
-            )
+            from mitiq.interface.mitiq_qiskit.conversions import _add_identity_to_idle
 
             # Avoid mutating the input circuit
             circuit = circuit.copy()
@@ -351,9 +351,7 @@ def accept_qprogram_and_validate(
 
                 # Add back original declarations and measurements.
                 out_circuit = Program(
-                    list(new_declarations.values())
-                    + instructions
-                    + measurements
+                    list(new_declarations.values()) + instructions + measurements
                 )
 
                 # Set the number of shots to the input circuit.
@@ -368,9 +366,7 @@ def accept_qprogram_and_validate(
                 )
 
                 out_circuit.remove_final_measurements()
-                out_circuit = _transform_registers(
-                    out_circuit, new_qregs=circuit.qregs
-                )
+                out_circuit = _transform_registers(out_circuit, new_qregs=circuit.qregs)
                 _remove_identity_from_idle(out_circuit, idle_qubits)
                 if circuit.cregs and not out_circuit.cregs:
                     out_circuit.add_register(*circuit.cregs)
