@@ -4,6 +4,7 @@ from copy import copy
 
 import matplotlib.pyplot as plt
 import numpy as np
+from cirq import DensityMatrixSimulator, depolarize
 from qiskit_aer import AerSimulator, noise
 from tqdm import tqdm
 
@@ -13,30 +14,44 @@ from mitiq.interface.conversions import convert_from_mitiq, convert_to_mitiq
 warnings.filterwarnings("ignore")
 
 
-def run_benchmark(n_qubits, num_cliffords, mode):
-    circuit = benchmarks.generate_rb_circuits(
-        n_qubits=n_qubits,
-        num_cliffords=num_cliffords,
-        return_type="qiskit",
-    )[0]
-    circuit.measure_all()
+def run_benchmark(n_qubits, num_cliffords, mode, backend):
+    if backend == "qiskit":
+        circuit = benchmarks.generate_rb_circuits(
+            n_qubits=n_qubits,
+            num_cliffords=num_cliffords,
+            return_type="qiskit",
+        )[0]
+        circuit.measure_all()
 
-    noise_model = noise.NoiseModel()
-    error = noise.depolarizing_error(0.01, 1)
-    noise_model.add_all_qubit_quantum_error(
-        error, ["x", "y", "z", "sx", "sxdg", "rx", "ry", "rz"]
-    )
-    shots = 1024
+        noise_model = noise.NoiseModel()
+        error = noise.depolarizing_error(0.01, 1)
+        noise_model.add_all_qubit_quantum_error(
+            error, ["x", "y", "z", "sx", "sxdg", "rx", "ry", "rz"]
+        )
+        shots = 1024
 
-    noisy_simulator = AerSimulator(noise_model=noise_model, method="density_matrix")
-    simulator = AerSimulator(method="density_matrix")
+        noisy_simulator = AerSimulator(noise_model=noise_model, method="density_matrix")
+        simulator = AerSimulator(method="density_matrix")
 
-    def execute_qiskit(circuit, noise=True):
-        if noise:
-            result = noisy_simulator.run(circuit, shots=shots).result()
-        else:
-            result = simulator.run(circuit, shots=shots).result()
-        return result.get_counts(circuit)["0" * circuit.num_qubits] / shots
+        def execute(circuit, noise=True):
+            if noise:
+                result = noisy_simulator.run(circuit, shots=shots).result()
+            else:
+                result = simulator.run(circuit, shots=shots).result()
+            return result.get_counts(circuit)["0" * circuit.num_qubits] / shots
+
+    elif backend == "cirq":
+        circuit = benchmarks.generate_rb_circuits(
+            n_qubits=n_qubits,
+            num_cliffords=num_cliffords,
+            return_type="cirq",
+        )[0]
+
+        def execute(circuit, noise=True):
+            if noise:
+                circuit = circuit.with_noise(depolarize(p=0.01))
+            rho = DensityMatrixSimulator().simulate(circuit).final_density_matrix
+            return rho[0, 0].real
 
     # Compute the expectation value of the |0><0| observable.
     # noisy_value = execute_qiskit(circuit)
@@ -50,7 +65,7 @@ def run_benchmark(n_qubits, num_cliffords, mode):
     if mode == "ZNE":
         # print("Run ZNE...")
         start_time = time.perf_counter()
-        mitigated_result = zne.execute_with_zne(circuit, execute_qiskit)
+        mitigated_result = zne.execute_with_zne(circuit, execute)
         end_time = time.perf_counter()
 
         # print(f"Error with mitigation (ZNE) : {abs(ideal_value - mitigated_result):.{3}}")
@@ -72,9 +87,7 @@ def run_benchmark(n_qubits, num_cliffords, mode):
         )
         # circuit.remove_final_measurements()
         start_time = time.perf_counter()
-        mitigated_result = pec.execute_with_pec(
-            circuit, execute_qiskit, representations=reps
-        )
+        mitigated_result = pec.execute_with_pec(circuit, execute, representations=reps)
         end_time = time.perf_counter()
 
         # print(f"Error with mitigation (PEC) : {abs(ideal_value - mitigated_result):.{3}}")
@@ -89,16 +102,16 @@ def run_benchmark(n_qubits, num_cliffords, mode):
         return pec_conversion_time, end_time - start_time
 
 
-def plot_benchmark(n_qubits, num_cliffords, mitigation_type):
+def plot_benchmark(n_qubits, num_cliffords, mitigation_type, backend):
     conv_times = []
     total_times = []
     for i in tqdm(range(len(num_cliffords))):
-        ct, tt = run_benchmark(n_qubits, num_cliffords[i], mitigation_type)
+        ct, tt = run_benchmark(n_qubits, num_cliffords[i], mitigation_type, backend)
         conv_times.append(ct)
         total_times.append(tt)
 
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 5))
-    fig.suptitle(f"{mitigation_type} Benchmark for {n_qubits} qubits")
+    fig.suptitle(f"{mitigation_type} Benchmark for {n_qubits} qubits ({backend})")
     ax1.plot(num_cliffords, conv_times, label=f"{mitigation_type} Conversion Time")
     ax1.plot(num_cliffords, total_times, label="Total Time")
     ax1.set_xlabel("Number of Cliffords")
@@ -119,9 +132,11 @@ def plot_benchmark(n_qubits, num_cliffords, mitigation_type):
 
 n_qubits = 2
 num_cliffords = list(range(1, 100, 10))
-plot_benchmark(n_qubits, num_cliffords, "ZNE")
+plot_benchmark(n_qubits, num_cliffords, "ZNE", "qiskit")
+plot_benchmark(n_qubits, num_cliffords, "ZNE", "cirq")
 
 
 n_qubits = 1
 num_cliffords = list(range(1, 10, 1))
-plot_benchmark(n_qubits, num_cliffords, "PEC")
+plot_benchmark(n_qubits, num_cliffords, "PEC", "qiskit")
+plot_benchmark(n_qubits, num_cliffords, "PEC", "cirq")
