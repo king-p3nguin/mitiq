@@ -5,7 +5,7 @@
 
 """Functions for converting to/from Mitiq's internal circuit representation."""
 
-import logging
+import time
 from functools import wraps
 from typing import Any, Callable, Dict, Iterable, Optional, Tuple, cast
 
@@ -74,8 +74,10 @@ def convert_to_mitiq(circuit: QPROGRAM) -> Tuple[cirq.Circuit, str]:
         input_circuit_type: Type of input circuit represented by a string.
     """
     try:
+        convert_to_mitiq.time -= time.perf_counter()
         convert_to_mitiq.counter += 1
     except AttributeError:
+        convert_to_mitiq.time = -time.perf_counter()
         convert_to_mitiq.counter = 1
 
     conversion_function: Callable[[Any], cirq.Circuit]
@@ -144,6 +146,7 @@ def convert_to_mitiq(circuit: QPROGRAM) -> Tuple[cirq.Circuit, str]:
             f"supported by Mitiq are \n{SUPPORTED_PROGRAM_TYPES}."
         )
 
+    convert_to_mitiq.time += time.perf_counter()
     return mitiq_circuit, input_circuit_type
 
 
@@ -154,6 +157,12 @@ def convert_from_mitiq(circuit: cirq.Circuit, conversion_type: str) -> QPROGRAM:
         circuit: Mitiq circuit to convert.
         conversion_type: String specifier for the converted circuit type.
     """
+    try:
+        convert_from_mitiq.time -= time.perf_counter()
+        convert_from_mitiq.counter += 1
+    except AttributeError:
+        convert_from_mitiq.time = -time.perf_counter()
+        convert_from_mitiq.counter = 1
     conversion_function: Callable[[cirq.Circuit], QPROGRAM]
     if conversion_type == "qiskit":
         from mitiq.interface.mitiq_qiskit.conversions import to_qiskit
@@ -200,6 +209,7 @@ def convert_from_mitiq(circuit: cirq.Circuit, conversion_type: str) -> QPROGRAM:
             f"circuit of type {conversion_type}."
         )
 
+    convert_from_mitiq.time += time.perf_counter()
     return converted_circuit
 
 
